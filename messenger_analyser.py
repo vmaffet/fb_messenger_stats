@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import calendar, json, locale, os, re, readline, sys
+import calendar, json, locale, re, readline, sys
+from pathlib import Path
 from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 from functools import partial
@@ -12,14 +13,10 @@ def get_threads_sizes(path):
 
   threads = {}
 
-  for element in os.listdir(dir_name):
-    sub_dir = os.path.join(dir_name, element)
+  for sub_dir in dir_name.iterdir():
 
-    if not os.path.isdir(sub_dir):
-      continue
-
-    if 'message_1.json' in os.listdir(sub_dir):
-      size = sum(os.path.getsize(os.path.join(sub_dir, e)) for e in os.listdir(sub_dir))
+    if (sub_dir / 'message_1.json').exists():
+      size = sum(e.stat().st_size for e in sub_dir.iterdir())
       threads[sub_dir] = size
 
   return threads
@@ -31,11 +28,9 @@ def get_thread_data(thread_path):
 
   fix_utf8 = partial(re.compile(rb'\\u00([\da-f]{2})').sub, lambda m: bytes.fromhex(m.group(1).decode()))
 
-  for file_name in os.listdir(thread_path):
-    if not re.search(r'message_\d+\.json', file_name):
-      continue
+  for file_name in thread_path.glob('./message_*.json'):
 
-    with open(os.path.join(thread_path,file_name), 'rb') as thread:
+    with file_name.open('rb') as thread:
 
       clean = fix_utf8(thread.read()).decode('utf-8')
       file_data = json.loads(clean)
@@ -307,9 +302,9 @@ if __name__ == '__main__':
   dir_name = input('Path of your facebook download: ')
   print()
 
-  dir_name = os.path.join(dir_name, 'messages', 'inbox')
+  dir_name = Path(dir_name) / 'messages' / 'inbox'
 
-  if not os.path.isdir(dir_name):
+  if not dir_name.is_dir():
     print(f'Directory {dir_name} does not exist')
     sys.exit()
 
@@ -319,7 +314,6 @@ if __name__ == '__main__':
   nb_show = int(input(f'Number of threads to show [1-{len(threads)}]: '))
   most_popular = sorted(threads, key=threads.get, reverse=True)[:nb_show]
 
-  threads_by_participants = {}
   for i, thread in enumerate(most_popular):
     print(f'{i:2d}: {get_title(path=thread)}')
 
