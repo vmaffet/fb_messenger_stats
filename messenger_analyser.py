@@ -120,8 +120,7 @@ def get_time_info(*, path=None, data=None):
 
 def get_number_of_messages(*, path=None, data=None):
 
-  participants = get_participants(path=path, data=data)
-  person_count = {person:0 for person in participants}
+  person_count = defaultdict(int)
 
   if path is not None:
     data = get_thread_data(path)
@@ -137,8 +136,7 @@ def get_number_of_messages(*, path=None, data=None):
 
 def get_number_of_words(*, path=None, data=None):
 
-  participants = get_participants(path=path, data=data)
-  person_count = {person:0 for person in participants}
+  person_count = defaultdict(int)
 
   if path is not None:
     data = get_thread_data(path)
@@ -155,8 +153,7 @@ def get_number_of_words(*, path=None, data=None):
 
 def get_longest_message(*, path=None, data=None):
 
-  participants = get_participants(path=path, data=data)
-  longest_msg = {person:{'content':''} for person in participants}
+  longest_msg = defaultdict(lambda: defaultdict(str))
 
   if path is not None:
     data = get_thread_data(path)
@@ -174,8 +171,7 @@ def get_longest_message(*, path=None, data=None):
 
 def get_most_used_words(*, path=None, data=None):
 
-  participants = get_participants(path=path, data=data)
-  used_words = {person:Counter() for person in participants}
+  used_words = defaultdict(Counter)
 
   if path is not None:
     data = get_thread_data(path)
@@ -192,31 +188,22 @@ def get_most_used_words(*, path=None, data=None):
 
 def get_most_different_words(used_words):
 
-  word_diff = {person:{} for person in used_words}
+  word_diff = defaultdict(dict)
 
-  common_words = set()
-  for words in used_words.values():
-    if len(common_words) == 0:
-      common_words |= words.keys()
-    else:
-      common_words &= words.keys()
+  words = set()
+  for w in used_words.values():
+    words |= w.keys()
 
-  common_count = {}
-  for person in used_words:
-    common_count[person] = sum(used_words[person][word] for word in common_words)
+  count = {p:sum(used_words[p].values()) for p in used_words}
 
-  for person in used_words:
-    for word in common_words:
-      usage = used_words[person][word] / common_count[person]
+  for p in used_words:
+    for w in words:
 
-      other_word = other_tot = 0
-      for other_person in used_words:
-        if other_person != person:
-          other_word += used_words[other_person][word]
-          other_tot  += common_count[other_person]
-      other_usage = other_word / other_tot
+      other_word = sum(used_words[op][w] for op in used_words.keys() - {p})
+      other_tot  = sum(count[op]         for op in used_words.keys() - {p})
 
-      word_diff[person][word] = usage / other_usage
+      if used_words[p][w]*other_tot and other_word*count[p]:
+        word_diff[p][w] = (used_words[p][w] * other_tot) / (other_word * count[p])
 
   return word_diff
 
@@ -318,6 +305,7 @@ def get_number_per_week(*, path=None, data=None):
 if __name__ == '__main__':
 
   dir_name = input('Path of your facebook download: ')
+  print()
 
   dir_name = os.path.join(dir_name, 'messages', 'inbox')
 
@@ -356,12 +344,11 @@ if __name__ == '__main__':
   sel_longest = get_longest_message(data=sel_data)
 
 
-
   print()
   print(f'Title:                {sel_title}')
   print(f'Participants:         {", ".join(sel_participants)}')
   print(f'Since:                {sel_start:%a, %d %b %Y}')
-  print(f'Total messages sent:  {sel_mcount} messages ~ {sel_mcount/sel_duration.days:.1f} msg per day')
+  print(f'Total messages sent:  {sel_mcount} messages ~ {sel_mcount/max(sel_duration.days,1):.1f} msg per day')
   print(f'Most active 24 hours: Starting on {sel_24h_start:%a, %d %b %Y at %H:%M:%S} with {sel_24h_count} messages')
   print(f'Longest pause:        From {sel_start_long:%d %b %Y} to {sel_end_long:%d %b %Y} for {timedelta(seconds=(sel_end_long-sel_start_long).total_seconds()).days} days')
 
@@ -375,26 +362,26 @@ if __name__ == '__main__':
     print(f'{hour:02d}: ({100*sel_day_rep[hour]:5.2f}%) {"#"*int(100*sel_day_rep[hour])}')
 
   print('\nMost active:')
-  for person in sel_participants:
-    first_name, *_ = person.split()
+  for person in sel_part_mcount.keys() | sel_part_wcount.keys():
+    first_name, *_ = person.split() if person else [person]
     mcount = sel_part_mcount[person]
     wcount = sel_part_wcount[person]
-    print(f'{" "*15}{first_name}\t: {mcount} msg ({100*mcount/sel_mcount:.1f}%) ~ {wcount} wrd ({100*wcount/sel_wcount:.1f}%) ~ {wcount/mcount:.1f} wpm')
+    print(f'{" "*15}{first_name}\t: {mcount} msg ({100*mcount/sel_mcount:.1f}%) ~ {wcount} wrd ({100*wcount/sel_wcount:.1f}%) ~ {wcount/mcount if mcount else 0:.1f} wpm')
 
   print('\nMost used words:')
-  for person in sel_participants:
-    first_name, *_ = person.split()
+  for person in sel_words:
+    first_name, *_ = person.split() if person else [person]
     print(f'{" "*15}{first_name}\t: '+', '.join(word for word, _ in sel_words[person].most_common(10)))
 
   print('\nMost personal words:')
-  for person in sel_participants:
-    first_name, *_ = person.split()
+  for person in sel_personal_words:
+    first_name, *_ = person.split() if person else [person]
     best_words = sorted(sel_personal_words[person], key=sel_personal_words[person].get, reverse=True)[:5]
     print(f'{" "*15}{first_name}\t: '+', '.join(f'{word} (x{sel_personal_words[person][word]:.0f})' for word in best_words))
 
   print('\nLongest messages:')
-  for person in sel_participants:
-    first_name, *_ = person.split()
+  for person in sel_longest:
+    first_name, *_ = person.split() if person else [person]
     length = len(sel_longest[person]['content'].split())
     send_time = datetime.fromtimestamp(sel_longest[person]['timestamp_ms']/1000)
     print(f'{" "*15}{first_name}\t: {length} words on {send_time:%a, %d %b %Y at %H:%M:%S}, show? [Y/N]: ',end='')
